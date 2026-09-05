@@ -33,7 +33,7 @@ import {
 } from '../../providers';
 import { _ytAPI } from '../index';
 import { reactiveOwner } from '../reactive-root';
-import { config } from '../renderer';
+import { config } from '../state';
 import { currentLyrics, lyricsStore, setLyricsStore } from '../store';
 
 import type { PlayerAPIEvents } from '@/types/player-api-events';
@@ -193,18 +193,20 @@ export const LyricsPicker = (props: {
   const next = () => {
     setHasManuallySwitchedProvider(true);
     setLyricsStore('provider', (prevProvider) => {
-      const idx = providerNames.indexOf(prevProvider);
-      return providerNames[(idx + 1) % providerNames.length];
+      const list = enabledProviders();
+      if (!list.length) return prevProvider;
+      const idx = list.indexOf(prevProvider);
+      return list[(idx + 1) % list.length];
     });
   };
 
   const previous = () => {
     setHasManuallySwitchedProvider(true);
     setLyricsStore('provider', (prevProvider) => {
-      const idx = providerNames.indexOf(prevProvider);
-      return providerNames[
-        (idx + providerNames.length - 1) % providerNames.length
-      ];
+      const list = enabledProviders();
+      if (!list.length) return prevProvider;
+      const idx = list.indexOf(prevProvider);
+      return list[(idx + list.length - 1) % list.length];
     });
   };
 

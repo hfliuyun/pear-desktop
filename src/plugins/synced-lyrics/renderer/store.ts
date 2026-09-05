@@ -4,7 +4,7 @@ import { createStore } from 'solid-js/store';
 import { getSongInfo } from '@/providers/song-info-front';
 
 import { reactiveOwner } from './reactive-root';
-import { config } from './renderer';
+import { config } from './state';
 
 import {
   type ProviderName,

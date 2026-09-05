@@ -18,14 +18,27 @@ import {
 } from './components';
 import { LyricsPicker } from './components/LyricsPicker';
 import { reactiveOwner } from './reactive-root';
+import {
+  config,
+  setConfig,
+  currentTime,
+  setCurrentTime,
+  isVisible,
+  setIsVisible,
+} from './state';
 import { currentLyrics } from './store';
 import { selectors } from './utils';
 
-import type { LineLyrics, SyncedLyricsPluginConfig } from '../types';
+import type { LineLyrics } from '../types';
 
-export const [isVisible, setIsVisible] = createSignal<boolean>(false);
-export const [config, setConfig] =
-  createSignal<SyncedLyricsPluginConfig | null>(null);
+export {
+  config,
+  setConfig,
+  currentTime,
+  setCurrentTime,
+  isVisible,
+  setIsVisible,
+};
 
 runWithOwner(reactiveOwner, () => {
   createEffect(() => {
@@ -142,8 +155,6 @@ type LyricsRendererChild =
     };
 
 const lyricsPicker: LyricsRendererChild = { kind: 'LyricsPicker' };
-
-export const [currentTime, setCurrentTime] = createSignal<number>(-1);
 export const LyricsRenderer = () => {
   const [scroller, setScroller] = createSignal<VirtualizerHandle>();
   const [stickyRef, setStickRef] = createSignal<HTMLElement | null>(null);
