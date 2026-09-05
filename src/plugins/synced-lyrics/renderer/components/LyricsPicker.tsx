@@ -42,8 +42,16 @@ const LocalStorageSchema = z.object({
   provider: ProviderNameSchema,
 });
 
+// providers left after the user disabled some in the settings menu
+const enabledProviders = () => {
+  const disabled = config()?.disabledProviders;
+  return disabled?.length
+    ? providerNames.filter((provider) => !disabled.includes(provider))
+    : Array.from(providerNames);
+};
+
 export const providerIdx = runWithOwner(reactiveOwner, () =>
-  createMemo(() => providerNames.indexOf(lyricsStore.provider)),
+  createMemo(() => enabledProviders().indexOf(lyricsStore.provider)),
 )!;
 
 const shouldSwitchProvider = (providerData: ProviderState) => {
@@ -65,15 +73,16 @@ const providerBias = (p: ProviderName) =>
   (lyricsStore.lyrics[p].data?.lyrics ? 1 : -1);
 
 const pickBestProvider = () => {
+  const disabled = config()?.disabledProviders ?? [];
   const preferred = config()?.preferredProvider;
-  if (preferred) {
+  if (preferred && !disabled.includes(preferred)) {
     const data = lyricsStore.lyrics[preferred].data;
     if (Array.isArray(data?.lines) || data?.lyrics) {
       return { provider: preferred, force: true };
     }
   }
 
-  const providers = Array.from(providerNames);
+  const providers = enabledProviders();
   providers.sort((a, b) => providerBias(b) - providerBias(a));
 
   return { provider: providers[0], force: false };
@@ -148,17 +157,28 @@ export const LyricsPicker = (props: {
   }
 
   createEffect(() => {
+    const disabled = config()?.disabledProviders ?? [];
+
+    // the displayed provider got disabled (or is disabled at startup):
+    // always re-pick, even if it had been chosen manually
+    if (disabled.includes(lyricsStore.provider)) {
+      const { provider } = pickBestProvider();
+      if (provider) setLyricsStore('provider', provider);
+      return;
+    }
+
     if (!hasManuallySwitchedProvider()) {
       const starred = starredProvider();
-      if (starred !== null) {
+      if (starred !== null && !disabled.includes(starred)) {
         setLyricsStore('provider', starred);
         return;
       }
 
-      const allProvidersFailed = providerNames.every((p) =>
+      const candidates = enabledProviders();
+      const allProvidersFailed = candidates.every((p) =>
         shouldSwitchProvider(lyricsStore.lyrics[p]),
       );
-      if (allProvidersFailed) return;
+      if (!candidates.length || allProvidersFailed) return;
 
       const { provider, force } = pickBestProvider();
       if (
@@ -205,7 +225,7 @@ export const LyricsPicker = (props: {
 
       <div class="lyrics-picker-content">
         <div class="lyrics-picker-content-label">
-          <Index each={providerNames}>
+          <Index each={enabledProviders()}>
             {(provider) => (
               <div
                 class="lyrics-picker-item"
@@ -279,7 +299,7 @@ export const LyricsPicker = (props: {
         </div>
 
         <ul class="lyrics-picker-content-dots">
-          <For each={providerNames}>
+          <For each={enabledProviders()}>
             {(_, idx) => (
               <li
                 class="lyrics-picker-dot"

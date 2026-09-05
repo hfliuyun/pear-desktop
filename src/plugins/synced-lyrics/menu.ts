@@ -10,6 +10,7 @@ export const menu = async (
   ctx: MenuContext<SyncedLyricsPluginConfig>,
 ): Promise<MenuItemConstructorOptions[]> => {
   const config = await ctx.getConfig();
+  const disabledProviders = config.disabledProviders ?? [];
 
   return [
     {
@@ -28,18 +29,45 @@ export const menu = async (
             ctx.setConfig({ preferredProvider: undefined });
           },
         },
-        ...providerNames.map(
-          (provider) =>
-            ({
-              label: provider,
-              type: 'radio',
-              checked: config.preferredProvider === provider,
-              click() {
-                ctx.setConfig({ preferredProvider: provider });
-              },
-            }) as const,
-        ),
+        ...providerNames
+          .filter((provider) => !disabledProviders.includes(provider))
+          .map(
+            (provider) =>
+              ({
+                label: provider,
+                type: 'radio',
+                checked: config.preferredProvider === provider,
+                click() {
+                  ctx.setConfig({ preferredProvider: provider });
+                },
+              }) as const,
+          ),
       ],
+    },
+    {
+      label: t('plugins.synced-lyrics.menu.providers.label'),
+      toolTip: t('plugins.synced-lyrics.menu.providers.tooltip'),
+      type: 'submenu',
+      submenu: providerNames.map(
+        (provider) =>
+          ({
+            label: provider,
+            type: 'checkbox',
+            checked: !disabledProviders.includes(provider),
+            click() {
+              const disabled = new Set(config.disabledProviders ?? []);
+              if (disabled.has(provider)) {
+                disabled.delete(provider);
+              } else {
+                disabled.add(provider);
+              }
+
+              ctx.setConfig({
+                disabledProviders: disabled.size ? [...disabled] : undefined,
+              });
+            },
+          }) as const,
+      ),
     },
     {
       label: t('plugins.synced-lyrics.menu.precise-timing.label'),

@@ -4,6 +4,7 @@ import { createStore } from 'solid-js/store';
 import { getSongInfo } from '@/providers/song-info-front';
 
 import { reactiveOwner } from './reactive-root';
+import { config } from './renderer';
 
 import {
   type ProviderName,
@@ -98,6 +99,8 @@ export const fetchLyrics = (info: SongInfo) => {
     LyricProvider,
   ][]
     ) {
+    if (config()?.disabledProviders?.includes(providerName)) continue;
+
     const pCache = cache.data[providerName];
 
     tasks.push(
@@ -145,6 +148,8 @@ export const fetchLyrics = (info: SongInfo) => {
 };
 
 export const retrySearch = (provider: ProviderName, info: SongInfo) => {
+  if (config()?.disabledProviders?.includes(provider)) return;
+
   setLyricsStore('lyrics', (old) => {
     const pCache = {
       state: 'fetching',
