@@ -135,12 +135,16 @@ export class ChineseLyrics implements LyricProvider {
     // reliably returns empty), so fall back to the title-only query.
     const queries = [`${info.title} ${info.artist}`, info.title];
     for (const query of queries) {
-      const songs = pickByDuration(
+      const songs = pickBestMatches(
         await this.qqSearchQuery(query),
-        (song) => song.interval,
         info.songDuration,
-        (song) => song.singer.map((singer) => singer.name),
         info.artist,
+        songTitles(info),
+        {
+          duration: (song) => song.interval,
+          artists: (song) => song.singer.map((singer) => singer.name),
+          titles: (song) => [song.name],
+        },
       );
       if (!songs.length) continue;
 
@@ -191,14 +195,22 @@ export class ChineseLyrics implements LyricProvider {
 
       const infos =
         (JSON.parse(text) as KugouSearchResponse)?.data?.info ?? [];
-      const sorted = pickByDuration(
+      const sorted = pickBestMatches(
         infos,
-        (song) => song.duration,
         info.songDuration,
-        // filename is "artist - title"; leading part is the artist, though
-        // UGC uploads sometimes put the uploader name there instead
-        (song) => song.filename?.split(' - ').slice(0, 1) ?? [],
         info.artist,
+        songTitles(info),
+        {
+          duration: (song) => song.duration,
+          // filename is "artist - title"; leading part is the artist, though
+          // UGC uploads sometimes put the uploader name there instead
+          artists: (song) => song.filename?.split(' - ').slice(0, 1) ?? [],
+          titles: (song) => {
+            const filename = song.filename ?? '';
+            const separator = filename.indexOf(' - ');
+            return [separator >= 0 ? filename.slice(separator + 3) : filename];
+          },
+        },
       );
 
       // The v3 search mixes covers/medleys into its fixed-size response, so
@@ -230,16 +242,36 @@ export class ChineseLyrics implements LyricProvider {
 
 // Duration is in seconds for both sources; tolerate ±15s like LRCLib does.
 // songDuration can be 0 when unavailable, in which case no filtering applies.
-// Entries whose artist matches the playing song sort first — the search
-// fallbacks (title-only queries, kugou's ~20-entry fixed response) mix in
-// namesake songs and covers that only the artist can rule out. Artist names
-// are compared simplified because YT Music often reports traditional ones.
-const pickByDuration = <T>(
+//
+// Both gates matter: the search fallbacks (title-only queries, kugou's fuzzy
+// ~20-entry response) mix in namesake songs, same-artist different songs and
+// covers that neither artist nor duration alone can rule out — e.g. playing
+// 罗大佑《新生代》 (282s) surfaced kugou's 罗大佑《鹿港小镇》 (281s). Titles are
+// compared with bracketed qualifiers stripped ("大魚（唱片版）" → "大鱼") and
+// simplified, since YT Music often reports traditional/annotated titles.
+const TITLE_SIMILARITY_THRESHOLD = 0.85;
+
+// YT Music's title/alternativeTitle are what the search is judged against
+const songTitles = (info: SearchSongInfo): string[] =>
+  [info.title, info.alternativeTitle].filter(
+    (title): title is string => !!title,
+  );
+
+const normalizeTitle = (title: string) =>
+  sify(title.toLowerCase())
+    .replace(/[（([【].*?[）)\]】]/g, '')
+    .replaceAll(/\s+/g, '');
+
+const pickBestMatches = <T>(
   items: T[],
-  seconds: (item: T) => number | undefined,
   songDuration: number,
-  entryArtists: (item: T) => string[],
   songArtist: string,
+  songTitles: string[],
+  extract: {
+    duration: (item: T) => number | undefined;
+    artists: (item: T) => string[];
+    titles: (item: T) => string[];
+  },
 ): T[] => {
   const tolerance = songDuration > 0 ? 15 : Infinity;
 
@@ -248,11 +280,13 @@ const pickByDuration = <T>(
     .map((artist) => sify(artist.trim().toLowerCase()))
     .filter(Boolean);
 
-  const affinity = (item: T) => {
-    const artists = entryArtists(item)
+  const targetTitles = songTitles.map(normalizeTitle).filter(Boolean);
+
+  const artistAffinity = (item: T) => {
+    const artists = extract
+      .artists(item)
       .map((artist) => sify(artist.trim().toLowerCase()))
       .filter(Boolean);
-    if (!artists.length || !targetArtists.length) return 0;
 
     let best = 0;
     for (const target of targetArtists) {
@@ -263,23 +297,41 @@ const pickByDuration = <T>(
     return best;
   };
 
+  const titleAffinity = (item: T) => {
+    const titles = extract.titles(item).map(normalizeTitle).filter(Boolean);
+
+    let best = 0;
+    for (const target of targetTitles) {
+      for (const title of titles) {
+        best = Math.max(best, jaroWinkler(target, title));
+      }
+    }
+    return best;
+  };
+
   return items
     .map((item) => {
-      const duration = seconds(item);
+      const duration = extract.duration(item);
       return {
         item,
         // entries without duration info are kept but ranked last
         durationDiff: duration ? Math.abs(duration - songDuration) : Infinity,
-        artistAffinity: affinity(item),
+        artistScore: artistAffinity(item),
+        titleScore: titleAffinity(item),
       };
     })
     .filter(
-      ({ durationDiff }) =>
-        durationDiff === Infinity || durationDiff <= tolerance,
+      ({ durationDiff, titleScore }) =>
+        (durationDiff === Infinity || durationDiff <= tolerance) &&
+        // hard gate: never guess lyrics for a song whose title is unrelated
+        (targetTitles.length === 0 ||
+          titleScore >= TITLE_SIMILARITY_THRESHOLD),
     )
     .sort(
       (a, b) =>
-        b.artistAffinity - a.artistAffinity || a.durationDiff - b.durationDiff,
+        b.titleScore - a.titleScore ||
+        b.artistScore - a.artistScore ||
+        a.durationDiff - b.durationDiff,
     )
     .map(({ item }) => item);
 };
