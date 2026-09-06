@@ -1,0 +1,72 @@
+name: Fork Release
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.x"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            targets: --win nsis:x64 portable:x64
+          - os: ubuntu-latest
+            targets: --linux AppImage:x64 deb:x64
+          - os: macos-latest
+            targets: --mac dmg:x64 dmg:arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Append fork suffix to version
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (!pkg.version.endsWith('-m')) pkg.version += '-m';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "Building version $(node -pe "require('./package.json').version")"
+
+      - name: Vite build
+        run: pnpm build
+
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          pnpm exec electron-builder ${{ matrix.targets }} -p always
+          -c.publish.provider=github
+          -c.publish.owner=${{ github.repository_owner }}
+          -c.publish.repo=${{ github.event.repository.name }}
+          -c.publish.releaseType=release
