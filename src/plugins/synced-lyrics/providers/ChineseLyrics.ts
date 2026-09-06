@@ -249,7 +249,15 @@ export class ChineseLyrics implements LyricProvider {
 // 罗大佑《新生代》 (282s) surfaced kugou's 罗大佑《鹿港小镇》 (281s). Titles are
 // compared with bracketed qualifiers stripped ("大魚（唱片版）" → "大鱼") and
 // simplified, since YT Music often reports traditional/annotated titles.
+//
+// Duration, however, must NOT veto a confident same-song match: YT Music
+// routinely serves live/remaster/edit cuts whose length differs from the
+// studio take indexed on QQ/kugou, and those lyrics still line up well
+// enough. So when title AND artist both match, the duration gate is waived;
+// it only rules out candidates whose artist is unrelated (same title,
+// different song by someone else).
 const TITLE_SIMILARITY_THRESHOLD = 0.85;
+const ARTIST_SIMILARITY_THRESHOLD = 0.85;
 
 // YT Music's title/alternativeTitle are what the search is judged against
 const songTitles = (info: SearchSongInfo): string[] =>
@@ -321,11 +329,16 @@ const pickBestMatches = <T>(
       };
     })
     .filter(
-      ({ durationDiff, titleScore }) =>
-        (durationDiff === Infinity || durationDiff <= tolerance) &&
+      ({ durationDiff, titleScore, artistScore }) =>
         // hard gate: never guess lyrics for a song whose title is unrelated
         (targetTitles.length === 0 ||
-          titleScore >= TITLE_SIMILARITY_THRESHOLD),
+          titleScore >= TITLE_SIMILARITY_THRESHOLD) &&
+        // strong title+artist match = same song: waive the duration gate so
+        // version cuts qualify; without an artist match the duration gate
+        // still rules out same-title songs by other artists
+        (artistScore >= ARTIST_SIMILARITY_THRESHOLD ||
+          durationDiff === Infinity ||
+          durationDiff <= tolerance),
     )
     .sort(
       (a, b) =>
