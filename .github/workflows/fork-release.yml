@@ -1,0 +1,115 @@
+name: Fork Release
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.x"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            targets: --win nsis:x64 nsis:ia32 nsis:arm64 portable:x64 portable:ia32 portable:arm64
+          - os: ubuntu-latest
+            targets: --linux AppImage:x64 AppImage:arm64 AppImage:armv7l deb:x64 deb:arm64 deb:armv7l rpm:x64 rpm:arm64 tar.gz:x64 tar.gz:arm64 tar.gz:armv7l freebsd:x64 freebsd:arm64 freebsd:armv7l flatpak:x64
+          - os: macos-latest
+            targets: --mac dmg:x64 dmg:arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Append fork suffix to version
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (!pkg.version.endsWith('-m')) pkg.version += '-m';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "Building version $(node -pe "require('./package.json').version")"
+
+      - name: Vite build
+        run: pnpm build
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo snap install snapcraft --classic
+          sudo apt update
+          sudo apt install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists --system flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Platform/x86_64/24.08
+          sudo flatpak install -y flathub org.freedesktop.Sdk/x86_64/24.08
+          sudo flatpak install -y flathub org.electronjs.Electron2.BaseApp/x86_64/24.08
+
+      - name: Build and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            echo "::notice::Publish attempt $i"
+            if pnpm exec electron-builder ${{ matrix.targets }} -p always \
+                -c.nsis.artifactName='${productName} Setup ${version} ${arch}.${ext}' \
+                -c.portable.artifactName='${productName} ${version} ${arch}.${ext}' \
+                -c.publish.provider=github \
+                -c.publish.owner=${{ github.repository_owner }} \
+                -c.publish.repo=${{ github.event.repository.name }} \
+                -c.publish.releaseType=release; then
+              exit 0
+            fi
+            echo "Attempt $i failed; retrying in 60s..."
+            sleep 60
+          done
+          exit 1
+
+      - name: Build and publish snap (best-effort)
+        if: runner.os == 'Linux'
+        shell: bash
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2; do
+            echo "::notice::Snap publish attempt $i"
+            if pnpm exec electron-builder --linux snap:x64 -p always \
+                -c.publish.provider=github \
+                -c.publish.owner=${{ github.repository_owner }} \
+                -c.publish.repo=${{ github.event.repository.name }} \
+                -c.publish.releaseType=release; then
+              exit 0
+            fi
+            echo "Snap attempt $i failed; retrying in 60s..."
+            sleep 60
+          done
+          exit 1
