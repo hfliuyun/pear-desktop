@@ -456,6 +456,126 @@
         }
       }
     },
+    "desktop-lyrics": {
+      "name": "桌面歌词",
+      "description": "悬浮于桌面的卡拉OK歌词，支持锁定穿透与样式自定义。启用『滚动歌词』插件可获得完整歌词源。",
+      "menu": {
+        "show-overlay": {
+          "label": "显示桌面歌词",
+          "tooltip": "显示或隐藏桌面歌词浮窗"
+        },
+        "lock": {
+          "label": "锁定桌面歌词（鼠标穿透）",
+          "tooltip": "锁定后点击将穿透浮窗作用于下层窗口；可在本菜单或使用全局快捷键解锁"
+        },
+        "lines": {
+          "label": "显示模式",
+          "single": {
+            "label": "单行"
+          },
+          "double": {
+            "label": "双行"
+          }
+        },
+        "font-size": {
+          "label": "字号",
+          "custom": "自定义…",
+          "custom-prompt": "字号（{{min}}–{{max}} 像素）"
+        },
+        "font-family": {
+          "label": "字体",
+          "yahei": {
+            "label": "微软雅黑"
+          },
+          "simhei": {
+            "label": "黑体"
+          },
+          "kaiti": {
+            "label": "楷体"
+          },
+          "system": {
+            "label": "系统默认"
+          }
+        },
+        "theme": {
+          "label": "配色",
+          "green": {
+            "label": "青绿"
+          },
+          "blue": {
+            "label": "天蓝"
+          },
+          "orange": {
+            "label": "暖橙"
+          },
+          "pink": {
+            "label": "樱粉"
+          },
+          "mono": {
+            "label": "黑白"
+          }
+        },
+        "opacity": {
+          "label": "不透明度",
+          "custom": "自定义…",
+          "custom-prompt": "不透明度（{{min}}%–{{max}}%）"
+        },
+        "background": {
+          "label": "歌词背景板",
+          "tooltip": "在歌词文字后显示一层半透明圆角底板，提升浅色桌面下的可读性"
+        },
+        "align": {
+          "label": "对齐",
+          "left": {
+            "label": "左对齐"
+          },
+          "center": {
+            "label": "居中"
+          },
+          "right": {
+            "label": "右对齐"
+          }
+        },
+        "karaoke": {
+          "label": "卡拉OK填充",
+          "tooltip": "渐变填充跟随当前句的演唱进度"
+        },
+        "show-next-line": {
+          "label": "显示下一句"
+        },
+        "show-toolbar": {
+          "label": "显示悬浮工具栏"
+        },
+        "click-to-seek": {
+          "label": "点击歌词跳转进度",
+          "tooltip": "启用后点击歌词行可跳转到该句。按住歌词拖动即可移动浮窗；锁定后仅右上角的小锁可点击解锁。"
+        },
+        "show-translation": {
+          "label": "显示翻译",
+          "tooltip": "对支持的歌曲显示QQ音乐提供的中文翻译（需要启用『滚动歌词』插件）"
+        },
+        "time-offset": {
+          "label": "时间轴偏移",
+          "tooltip": "整体提前或延后歌词时间轴，适配歌词源与播放进度不一致的情况",
+          "early-1": "提前 1 秒",
+          "early-05": "提前 0.5 秒",
+          "synced": "同步（无偏移）",
+          "late-05": "延后 0.5 秒",
+          "late-1": "延后 1 秒"
+        },
+        "shortcuts": {
+          "label": "全局快捷键",
+          "tooltip": "Ctrl+Alt+D 开关浮窗，Ctrl+Alt+L 切换锁定，Ctrl+Alt+P 播放/暂停，Ctrl+Alt+←/→ 上一首/下一首",
+          "register-failed": "部分快捷键注册失败：{{accelerators}}（可能被其他程序占用）"
+        }
+      },
+      "overlay": {
+        "loading": "正在获取歌词…",
+        "locked-toast": "桌面歌词已锁定，可在 插件 → 桌面歌词 菜单解锁。",
+        "no-lyrics": "♪ 无歌词",
+        "settings-tooltip": "打开设置菜单"
+      }
+    },
     "disable-autoplay": {
       "description": "让曲目开始时处于 “暂停” 模式",
       "menu": {
@@ -897,6 +1017,10 @@
             "tooltip": "没有首选的歌词源"
           },
           "tooltip": "选择默认要用的源"
+        },
+        "providers": {
+          "label": "启用歌词源",
+          "tooltip": "启用或停用歌词源；停用后不再抓取歌词，也不参与自动选择"
         },
         "romanization": {
           "label": "将歌词罗马化",

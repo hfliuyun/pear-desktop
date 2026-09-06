@@ -1,0 +1,789 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>desktop-lyrics-overlay</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        background: transparent;
+        overflow: hidden;
+        height: 100%;
+        user-select: none;
+        cursor: default;
+      }
+      body {
+        font-family: var(--font-family, 'Microsoft YaHei', sans-serif);
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ---------- drag is handled manually with pointer events (QQ音乐-style:
+         hold the lyrics and move; a clean click seeks) — no -webkit-app-region,
+         because drag regions swallow pointer events ---------- */
+      body.dragging {
+        cursor: grabbing !important;
+        /* show the real window bounds while dragging */
+        outline: 1px solid rgba(255, 255, 255, 0.45);
+        outline-offset: -1px;
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      /* ---------- toolbar ---------- */
+      #toolbar-strip {
+        flex: none;
+        height: 26px;
+        position: relative;
+        z-index: 5;
+      }
+      #toolbar {
+        position: absolute;
+        top: 2px;
+        right: 10px;
+        display: flex;
+        gap: 6px;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+      body.toolbar-visible #toolbar {
+        opacity: 1;
+      }
+      body:not(.show-toolbar) #toolbar {
+        display: none;
+      }
+      /* locked: keep a dimmed lock button visible & clickable (QQ音乐-style
+         unlock), everything else stays click-through */
+      body.locked #toolbar {
+        display: flex;
+        opacity: 0.45;
+      }
+      body.locked #toolbar:hover {
+        opacity: 1;
+      }
+      body.locked #close-btn,
+      body.locked #prev-btn,
+      body.locked #play-btn,
+      body.locked #next-btn,
+      body.locked #settings-btn {
+        display: none;
+      }
+      #toolbar button {
+        cursor: pointer;
+        border: none;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.55);
+        color: #fff;
+        font-size: 13px;
+        line-height: 1.4;
+        padding: 2px 10px;
+      }
+      #toolbar button:hover {
+        background: rgba(0, 0, 0, 0.8);
+      }
+
+      /* ---------- lyrics ---------- */
+      #stage {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 28px 4px;
+        overflow: hidden;
+        opacity: var(--opacity, 0.95);
+      }
+      .line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-align: var(--align, center);
+      }
+      .line.current {
+        font-size: var(--font-size, 36px);
+        font-weight: 700;
+        line-height: 1.3;
+        height: calc(var(--font-size, 36px) * 1.3);
+      }
+      .line.second {
+        font-size: calc(var(--font-size, 36px) * 0.85);
+        font-weight: 400;
+        line-height: 1.3;
+        height: calc(var(--font-size, 36px) * 0.85 * 1.3);
+        opacity: 0.75;
+      }
+      body.single .line.second {
+        display: none;
+      }
+      .text {
+        position: relative;
+        display: inline-block;
+        max-width: 100%;
+        z-index: 0;
+      }
+      .base {
+        color: var(--fg, #fff);
+        -webkit-text-stroke: var(--stroke-width, 3.6px)
+          var(--stroke, rgba(0, 0, 0, 0.85));
+        paint-order: stroke fill;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+      }
+      .fill {
+        position: absolute;
+        inset: 0;
+        width: var(--progress, 0%);
+        overflow: hidden;
+        white-space: nowrap;
+        color: transparent;
+        background: linear-gradient(
+          90deg,
+          var(--grad-1, #8cf6a4),
+          var(--grad-2, #2fd08c)
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+      }
+      body.no-karaoke .fill {
+        display: none;
+      }
+      body.clickable-lyrics .line {
+        cursor: pointer;
+      }
+
+      /* ---------- background panel (半透明底板) ---------- */
+      /* a pseudo-element behind the glyphs: it never participates in layout,
+         so the karaoke fill alignment is unaffected */
+      body.bg-panel .text::before {
+        content: '';
+        position: absolute;
+        inset: 0 0.35em;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 0.2em;
+        z-index: -1;
+      }
+      body.bg-panel #status {
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 8px;
+        padding: 2px 12px;
+      }
+
+      /* interlude: breathing ♪ animation instead of the line text */
+      @keyframes dl-breathe {
+        0%,
+        100% {
+          opacity: 0.35;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .line.current.interlude .base {
+        animation: dl-breathe 2s ease-in-out infinite;
+      }
+      .line.current.interlude .fill {
+        display: none;
+      }
+
+      /* ---------- status (loading / no lyrics) ---------- */
+      #status {
+        display: none;
+        width: fit-content;
+        margin: 0 auto;
+        font-size: calc(var(--font-size, 36px) * 0.6);
+        font-weight: 400;
+        line-height: 1.3;
+        color: rgba(255, 255, 255, 0.55);
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+        text-align: var(--align, center);
+        white-space: nowrap;
+      }
+      body.status-on #status {
+        display: block;
+      }
+      body.status-on .line {
+        display: none;
+      }
+
+      /* ---------- toast ---------- */
+      #toast {
+        position: absolute;
+        top: 32px;
+        right: 14px;
+        max-width: 55%;
+        background: rgba(0, 0, 0, 0.72);
+        color: #fff;
+        font-size: 13px;
+        line-height: 1.5;
+        padding: 6px 12px;
+        border-radius: 8px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 10;
+      }
+      #toast.show {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar-strip">
+      <div id="toolbar">
+        <button id="prev-btn" type="button" aria-label="previous">⏮</button>
+        <button id="play-btn" type="button" aria-label="play/pause">▶</button>
+        <button id="next-btn" type="button" aria-label="next">⏭</button>
+        <button id="settings-btn" type="button" aria-label="settings">⚙</button>
+        <button id="lock-btn" type="button">🔒</button>
+        <button id="close-btn" type="button">✕</button>
+      </div>
+    </div>
+    <div id="stage">
+      <div id="status"></div>
+      <div class="line current" id="current-line">
+        <span class="text"
+          ><span class="base" id="current-base"></span
+          ><span class="fill" id="current-fill" aria-hidden="true"></span
+        ></span>
+      </div>
+      <div class="line second" id="second-line">
+        <span class="text"><span class="base" id="second-text"></span></span>
+      </div>
+    </div>
+    <div id="toast"></div>
+    <script>
+      'use strict';
+
+      const THEMES = {
+        green: {
+          fg: '#ffffff',
+          stroke: 'rgba(0,0,0,.85)',
+          g1: '#8CF6A4',
+          g2: '#2FD08C',
+        },
+        blue: {
+          fg: '#ffffff',
+          stroke: 'rgba(0,0,0,.85)',
+          g1: '#7CD5FF',
+          g2: '#3A8BFF',
+        },
+        orange: {
+          fg: '#ffffff',
+          stroke: 'rgba(0,0,0,.85)',
+          g1: '#FFD66E',
+          g2: '#FF8A3D',
+        },
+        pink: {
+          fg: '#ffffff',
+          stroke: 'rgba(0,0,0,.85)',
+          g1: '#FFB3D9',
+          g2: '#FF6FA5',
+        },
+        mono: {
+          fg: '#ffffff',
+          stroke: 'rgba(0,0,0,.85)',
+          g1: '#FFFFFF',
+          g2: '#B0B0B0',
+        },
+      };
+
+      const INTERLUDE_MARK_RE = /^[\s♪♫·・.\-—~_]*$/;
+
+      const $ = (id) => document.getElementById(id);
+      const body = document.body;
+      const ui = {
+        stage: $('stage'),
+        status: $('status'),
+        toolbar: $('toolbar'),
+        currentLine: $('current-line'),
+        currentBase: $('current-base'),
+        currentFill: $('current-fill'),
+        secondLine: $('second-line'),
+        secondText: $('second-text'),
+        toast: $('toast'),
+        prevBtn: $('prev-btn'),
+        playBtn: $('play-btn'),
+        nextBtn: $('next-btn'),
+        settingsBtn: $('settings-btn'),
+        lockBtn: $('lock-btn'),
+        closeBtn: $('close-btn'),
+      };
+
+      const state = {
+        config: null,
+        texts: {
+          lockedToast: '',
+          loading: '',
+          noLyrics: '',
+          settingsTooltip: '',
+        },
+        lines: null,
+        lyricsState: 'idle',
+        song: null,
+        timeMs: 0,
+        atPerf: performance.now(),
+        paused: true,
+        renderedIndex: -2,
+        renderedSecond: null,
+        interlude: false,
+      };
+
+      // ---------- config ----------
+      const applyConfig = (config) => {
+        state.config = config;
+        if (config.texts) state.texts = config.texts;
+
+        const style = document.documentElement.style;
+        style.setProperty('--font-size', `${config.fontSize}px`);
+        style.setProperty('--font-family', config.fontFamily);
+        style.setProperty(
+          '--stroke-width',
+          `${Math.max(2, config.fontSize * 0.1)}px`,
+        );
+        style.setProperty('--opacity', String(config.opacity));
+        style.setProperty('--align', config.align);
+
+        const theme = THEMES[config.theme] ?? THEMES.green;
+        style.setProperty('--fg', theme.fg);
+        style.setProperty('--stroke', theme.stroke);
+        style.setProperty('--grad-1', theme.g1);
+        style.setProperty('--grad-2', theme.g2);
+
+        body.classList.toggle('locked', config.locked);
+        body.classList.toggle('single', config.lines === 'single');
+        body.classList.toggle('no-karaoke', !config.karaoke);
+        body.classList.toggle('show-toolbar', config.showToolbar);
+        body.classList.toggle('clickable-lyrics', config.clickToSeek);
+        body.classList.toggle('bg-panel', config.background);
+
+        ui.settingsBtn.title = state.texts.settingsTooltip || '';
+
+        if (config.locked) {
+          body.classList.remove('toolbar-visible');
+          showToast(state.texts.lockedToast, 5000);
+        }
+        ui.lockBtn.textContent = config.locked ? '🔓' : '🔒';
+        // the new locked state changes which regions are interactive
+        publishRects();
+      };
+
+      let toastTimer;
+      const showToast = (text, duration = 3000) => {
+        if (!text) return;
+        ui.toast.textContent = text;
+        ui.toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(
+          () => ui.toast.classList.remove('show'),
+          duration,
+        );
+      };
+
+      // ---------- status ----------
+      const showStatus = (text) => {
+        ui.status.textContent = text;
+        body.classList.add('status-on');
+        publishRects();
+      };
+      const hideStatus = () => {
+        body.classList.remove('status-on');
+        publishRects();
+      };
+
+      // ---------- lyrics rendering ----------
+      const findCurrentIndex = (timeMs) => {
+        const { lines } = state;
+        if (!lines || !lines.length || timeMs < lines[0].timeInMs) return -1;
+        let low = 0;
+        let high = lines.length - 1;
+        while (low < high) {
+          const mid = (low + high + 1) >> 1;
+          if (lines[mid].timeInMs <= timeMs) low = mid;
+          else high = mid - 1;
+        }
+        return low;
+      };
+
+      const isInterludeMark = (text) => INTERLUDE_MARK_RE.test(text);
+
+      // Heuristic: line-level LRC extends every line up to the next one, so a
+      // long line is "sung" for an estimated span, then rests until the next
+      // line. Rests longer than 5s become an interlude.
+      const interludeSpan = (line) => {
+        if (line.duration === Infinity || line.duration <= 0) return false;
+        if (isInterludeMark(line.text)) return true;
+        const sung = Math.min(Math.max(line.text.length * 300, 2500), 8000);
+        return (
+          line.duration - sung > 5000 &&
+          line.timeInMs + sung <= state.renderedTime
+        );
+      };
+
+      const setText = (element, text) => {
+        if (element.textContent !== text) element.textContent = text;
+      };
+
+      // ---------- word-level karaoke ----------
+      // Enhanced LRC carries per-word timings: distribute the fill by measured
+      // glyph width so the reveal boundary tracks the current word. Lines
+      // without word timings return null and fall back to the line-level
+      // interpolation below.
+      // Mirrors synced-lyrics' LRC parser: no space between two CJK words.
+      const CJK_RE = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+      const needsSpace = (a, b) => !(CJK_RE.test(a) && CJK_RE.test(b));
+
+      let measureCtx2d = null;
+      const getMeasureCtx = () => {
+        if (!measureCtx2d) {
+          measureCtx2d = document.createElement('canvas').getContext('2d');
+        }
+        return measureCtx2d;
+      };
+
+      let wordMetrics = null;
+      let wordMetricsKey = '';
+
+      const getWordMetrics = (words, key) => {
+        if (key === wordMetricsKey && wordMetrics) return wordMetrics;
+        const ctx2d = getMeasureCtx();
+        const style = getComputedStyle(ui.currentBase);
+        ctx2d.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const widths = words.map(({ word }) => ctx2d.measureText(word).width);
+        const gaps = words.map((word, i) => {
+          if (i === 0) return 0;
+          return needsSpace(words[i - 1].word, word.word)
+            ? ctx2d.measureText(' ').width
+            : 0;
+        });
+        const total = widths.reduce(
+          (sum, width, i) => sum + width + gaps[i],
+          0,
+        );
+        wordMetrics = { widths, gaps, total };
+        wordMetricsKey = key;
+        return wordMetrics;
+      };
+
+      const wordFillProgress = (line, timeMs, nextLine) => {
+        const words = line.words;
+        if (!words || !words.length) return null;
+        if (timeMs < words[0].timeInMs) return 0;
+
+        let index = 0;
+        while (
+          index + 1 < words.length &&
+          words[index + 1].timeInMs <= timeMs
+        ) {
+          index++;
+        }
+        const { widths, gaps, total } = getWordMetrics(
+          words,
+          `${state.renderedIndex}:${state.config?.fontSize}:${state.config?.fontFamily}:${line.text}`,
+        );
+
+        let prefix = 0;
+        for (let i = 0; i < index; i++) prefix += widths[i] + gaps[i];
+
+        // the last word runs to the end of the line (or the next line's start
+        // when the line duration is unknown)
+        const wordEnd =
+          index + 1 < words.length
+            ? words[index + 1].timeInMs
+            : line.duration > 0 && line.duration !== Infinity
+              ? line.timeInMs + line.duration
+              : (nextLine?.timeInMs ?? timeMs);
+        const span = Math.max(wordEnd - words[index].timeInMs, 1);
+        const partial = Math.min(
+          Math.max((timeMs - words[index].timeInMs) / span, 0),
+          1,
+        );
+        if (total <= 0) return 1;
+        return Math.min((prefix + partial * widths[index]) / total, 1);
+      };
+
+      const renderFrame = (rawTimeMs) => {
+        // the time-axis offset applies uniformly: line matching, karaoke
+        // progress, interlude detection and the second row all use the
+        // shifted time so they can never disagree
+        const offsetMs = (state.config?.timeOffset ?? 0) * 1000;
+        const timeMs = rawTimeMs + offsetMs;
+        state.renderedTime = timeMs;
+        const { lines, config } = state;
+        if (
+          !config ||
+          !lines ||
+          !lines.length ||
+          body.classList.contains('status-on')
+        ) {
+          ui.currentFill.style.width = '0%';
+          return;
+        }
+
+        const index = findCurrentIndex(timeMs);
+        const line = index >= 0 ? lines[index] : null;
+        const interlude = line ? interludeSpan(line) : false;
+
+        if (index !== state.renderedIndex || interlude !== state.interlude) {
+          state.renderedIndex = index;
+          state.interlude = interlude;
+          ui.currentLine.classList.toggle('interlude', interlude);
+          setText(
+            ui.currentBase,
+            line ? (interlude ? '♪ ♪ ♪' : line.text) : '',
+          );
+          setText(
+            ui.currentFill,
+            line ? (interlude ? '♪ ♪ ♪' : line.text) : '',
+          );
+        }
+
+        // karaoke progress (relative to the text box, alignment-safe);
+        // word timings take precedence over the line-level estimate
+        if (line && !interlude && config.karaoke) {
+          const next = index + 1 < lines.length ? lines[index + 1] : null;
+          const progress =
+            wordFillProgress(line, timeMs, next) ??
+            (line.duration > 0 && line.duration !== Infinity
+              ? Math.min(
+                  Math.max((timeMs - line.timeInMs) / line.duration, 0),
+                  1,
+                )
+              : 1);
+          ui.currentFill.style.width = `${(progress * 100).toFixed(2)}%`;
+        } else {
+          ui.currentFill.style.width = '0%';
+        }
+
+        // second row: translation if wanted and available, else the next line
+        let second = '';
+        if (config.lines === 'double') {
+          const next = index + 1 < lines.length ? lines[index + 1] : null;
+          if (config.showTranslation && line && line.translation) {
+            second = line.translation;
+          } else if (
+            config.showNextLine &&
+            next &&
+            !isInterludeMark(next.text)
+          ) {
+            second = next.text;
+          } else if (config.showNextLine && next) {
+            second = '♪ ♪ ♪';
+          }
+        }
+        if (second !== state.renderedSecond) {
+          state.renderedSecond = second;
+          setText(ui.secondText, second);
+        }
+      };
+
+      const frame = () => {
+        const timeMs = state.paused
+          ? state.timeMs
+          : state.timeMs + (performance.now() - state.atPerf);
+        renderFrame(timeMs);
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+
+      // ---------- IPC ----------
+      window.desktopLyrics.on('desktop-lyrics:config', (config) => {
+        applyConfig(config);
+      });
+
+      window.desktopLyrics.on('desktop-lyrics:time', (payload) => {
+        state.paused = payload.paused;
+        // messages resync the interpolation base; compensate IPC latency
+        state.timeMs = payload.timeMs + Math.max(0, Date.now() - payload.at);
+        state.atPerf = performance.now();
+        // the play/pause button is driven by the playback state
+        const icon = payload.paused ? '▶' : '⏸';
+        if (ui.playBtn.textContent !== icon) ui.playBtn.textContent = icon;
+      });
+
+      window.desktopLyrics.on('desktop-lyrics:song', (song) => {
+        const changed = !state.song || state.song.videoId !== song.videoId;
+        state.song = song;
+        if (changed) {
+          state.lines = null;
+          state.lyricsState = 'fetching';
+          state.renderedIndex = -2;
+          state.renderedSecond = null;
+          setText(ui.currentBase, '');
+          setText(ui.currentFill, '');
+          setText(ui.secondText, '');
+          showStatus(state.texts.loading);
+        }
+      });
+
+      window.desktopLyrics.on('desktop-lyrics:lyrics', (payload) => {
+        state.lines = payload.lines;
+        state.lyricsState = payload.state;
+        state.renderedIndex = -2;
+        state.renderedSecond = null;
+
+        if (payload.state === 'fetching') {
+          showStatus(state.texts.loading);
+        } else if (!payload.lines || payload.lines.length === 0) {
+          showStatus(state.texts.noLyrics);
+        } else {
+          hideStatus();
+        }
+      });
+
+      // ---------- toolbar ----------
+      ui.prevBtn.addEventListener('click', () => {
+        window.desktopLyrics.send('desktop-lyrics:prev');
+      });
+      ui.playBtn.addEventListener('click', () => {
+        window.desktopLyrics.send('desktop-lyrics:play-pause');
+      });
+      ui.nextBtn.addEventListener('click', () => {
+        window.desktopLyrics.send('desktop-lyrics:next');
+      });
+      ui.settingsBtn.addEventListener('click', () => {
+        window.desktopLyrics.send('desktop-lyrics:popup-settings');
+      });
+      ui.lockBtn.addEventListener('click', () => {
+        // toggles: click the lock again while locked to unlock (QQ音乐-style)
+        window.desktopLyrics.send(
+          'desktop-lyrics:set-locked',
+          !state.config?.locked,
+        );
+      });
+      ui.closeBtn.addEventListener('click', () => {
+        window.desktopLyrics.send('desktop-lyrics:hide');
+      });
+
+      // right-click opens the settings menu (same template as the plugins
+      // menu); suppressed entirely while locked
+      document.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (!state.config || state.config.locked) return;
+        window.desktopLyrics.send('desktop-lyrics:popup-settings');
+      });
+
+      // ---------- hover-driven interactivity ----------
+      // The window is mouse-transparent by default so its invisible margins
+      // never block the desktop. The renderer publishes the client rects of
+      // its visible content (lyrics text / status / toolbar; only the small
+      // lock button while locked — QQ音乐-style "click the lock to unlock"),
+      // and the main process polls the real cursor against those rects.
+      // Polling replaces forwarded mousemove, which is unreliable on Windows.
+      let dragging = false;
+
+      const pushRect = (rects, element) => {
+        if (!element) return;
+        const r = element.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+        }
+      };
+
+      const publishRects = () => {
+        if (!state.config) return;
+        const rects = [];
+        if (state.config.locked) {
+          // only the lock button stays interactive while locked
+          pushRect(rects, ui.lockBtn);
+        } else {
+          // hit rects hug the glyphs (.text), never the full-width line block
+          pushRect(rects, ui.currentLine.querySelector('.text'));
+          pushRect(rects, ui.secondLine.querySelector('.text'));
+          if (body.classList.contains('status-on')) pushRect(rects, ui.status);
+          pushRect(rects, ui.toolbar);
+        }
+        window.desktopLyrics.send('desktop-lyrics:set-hover-rects', rects);
+      };
+
+      let toolbarTimer;
+      const wakeToolbar = () => {
+        if (!state.config || state.config.locked || !state.config.showToolbar)
+          return;
+        body.classList.add('toolbar-visible');
+        clearTimeout(toolbarTimer);
+        toolbarTimer = setTimeout(
+          () => body.classList.remove('toolbar-visible'),
+          3000,
+        );
+      };
+
+      document.addEventListener('mousemove', wakeToolbar);
+      wakeToolbar();
+      setInterval(publishRects, 1000);
+
+      // ---------- manual drag (hold the lyrics and move) + click to seek ----------
+      // QQ音乐-style: the main process follows the real cursor on a short
+      // polling loop between drag-start/drag-end, so dragging is as smooth as
+      // a native window drag. A gesture that never moves past 5px counts as a
+      // click and falls through to the seek handlers below.
+      let dragSession = null; // { pointerId, startScreen, moved }
+      let suppressClick = false;
+
+      const endDragSession = (e) => {
+        if (!dragSession || (e && e.pointerId !== dragSession.pointerId))
+          return;
+        suppressClick = dragSession.moved;
+        if (dragSession.moved) {
+          dragging = false;
+          body.classList.remove('dragging');
+          window.desktopLyrics.send('desktop-lyrics:drag-end');
+        }
+        dragSession = null;
+      };
+
+      body.addEventListener('pointerdown', (e) => {
+        if (!state.config || state.config.locked) return;
+        if (e.button !== 0 || e.target.closest('#toolbar button')) return;
+        dragSession = {
+          pointerId: e.pointerId,
+          startScreen: { x: e.screenX, y: e.screenY },
+          moved: false,
+        };
+        body.setPointerCapture(e.pointerId);
+      });
+
+      body.addEventListener('pointermove', (e) => {
+        if (!dragSession || e.pointerId !== dragSession.pointerId) return;
+        const dx = e.screenX - dragSession.startScreen.x;
+        const dy = e.screenY - dragSession.startScreen.y;
+        if (!dragSession.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        if (!dragSession.moved) {
+          dragSession.moved = true;
+          dragging = true;
+          body.classList.add('dragging');
+          window.desktopLyrics.send('desktop-lyrics:drag-start');
+        }
+      });
+
+      body.addEventListener('pointerup', endDragSession);
+      body.addEventListener('pointercancel', endDragSession);
+
+      const seekToLine = (line) => {
+        if (suppressClick) {
+          suppressClick = false;
+          return;
+        }
+        if (!state.config || !state.config.clickToSeek || !line) return;
+        window.desktopLyrics.send(
+          'desktop-lyrics:seek',
+          Math.max(0, line.timeInMs) / 1000,
+        );
+      };
+      ui.currentLine.addEventListener('click', () => {
+        const { lines } = state;
+        if (lines && state.renderedIndex >= 0)
+          seekToLine(lines[state.renderedIndex]);
+      });
+      ui.secondLine.addEventListener('click', () => {
+        const { lines } = state;
+        if (lines && state.renderedIndex + 1 < lines.length) {
+          seekToLine(lines[state.renderedIndex + 1]);
+        }
+      });
+
+      // ready: ask the backend for a full state replay
+      window.desktopLyrics.send('desktop-lyrics:overlay-ready');
+    </script>
+  </body>
+</html>

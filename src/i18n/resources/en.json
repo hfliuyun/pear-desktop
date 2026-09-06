@@ -456,6 +456,126 @@
         }
       }
     },
+    "desktop-lyrics": {
+      "name": "Desktop Lyrics",
+      "description": "Floating desktop lyrics with karaoke fill, click-through lock and style options. Requires the Synced Lyrics plugin for the full set of lyric sources.",
+      "menu": {
+        "show-overlay": {
+          "label": "Show desktop lyrics",
+          "tooltip": "Show or hide the floating lyrics overlay"
+        },
+        "lock": {
+          "label": "Lock desktop lyrics (click-through)",
+          "tooltip": "When locked, clicks pass through the overlay to windows underneath; unlock here or with the global shortcut"
+        },
+        "lines": {
+          "label": "Display mode",
+          "single": {
+            "label": "Single line"
+          },
+          "double": {
+            "label": "Double line"
+          }
+        },
+        "font-size": {
+          "label": "Font size",
+          "custom": "Custom…",
+          "custom-prompt": "Font size ({{min}}–{{max}} px)"
+        },
+        "font-family": {
+          "label": "Font family",
+          "yahei": {
+            "label": "Microsoft YaHei"
+          },
+          "simhei": {
+            "label": "SimHei"
+          },
+          "kaiti": {
+            "label": "KaiTi"
+          },
+          "system": {
+            "label": "System default"
+          }
+        },
+        "theme": {
+          "label": "Color scheme",
+          "green": {
+            "label": "Green"
+          },
+          "blue": {
+            "label": "Sky blue"
+          },
+          "orange": {
+            "label": "Warm orange"
+          },
+          "pink": {
+            "label": "Sakura pink"
+          },
+          "mono": {
+            "label": "Black & white"
+          }
+        },
+        "opacity": {
+          "label": "Opacity",
+          "custom": "Custom…",
+          "custom-prompt": "Opacity ({{min}}%–{{max}}%)"
+        },
+        "background": {
+          "label": "Lyrics background panel",
+          "tooltip": "Show a semi-transparent rounded panel behind the lyrics text for better readability on light desktops"
+        },
+        "align": {
+          "label": "Alignment",
+          "left": {
+            "label": "Left"
+          },
+          "center": {
+            "label": "Center"
+          },
+          "right": {
+            "label": "Right"
+          }
+        },
+        "karaoke": {
+          "label": "Karaoke fill",
+          "tooltip": "Gradient fill that follows the singing progress within the current line"
+        },
+        "show-next-line": {
+          "label": "Show next line"
+        },
+        "show-toolbar": {
+          "label": "Show floating toolbar"
+        },
+        "click-to-seek": {
+          "label": "Click lyrics to seek",
+          "tooltip": "When enabled, clicking a lyrics line seeks to it. Hold the lyrics and drag to move the overlay; when locked, only the small lock button stays clickable."
+        },
+        "show-translation": {
+          "label": "Show translation",
+          "tooltip": "Show Chinese translations from QQ Music for supported songs (requires the Synced Lyrics plugin)"
+        },
+        "time-offset": {
+          "label": "Lyrics timing offset",
+          "tooltip": "Shift the lyrics timeline earlier or later to compensate for sources that drift from the playback position",
+          "early-1": "1s early",
+          "early-05": "0.5s early",
+          "synced": "Synced (no offset)",
+          "late-05": "0.5s late",
+          "late-1": "1s late"
+        },
+        "shortcuts": {
+          "label": "Global shortcuts",
+          "tooltip": "Ctrl+Alt+D toggles the overlay, Ctrl+Alt+L toggles the lock, Ctrl+Alt+P play/pause, Ctrl+Alt+←/→ previous/next track",
+          "register-failed": "Some shortcuts failed to register: {{accelerators}} (possibly in use by another app)"
+        }
+      },
+      "overlay": {
+        "loading": "Fetching lyrics…",
+        "locked-toast": "Desktop lyrics locked. Unlock via Plugins → Desktop Lyrics.",
+        "no-lyrics": "♪ No lyrics",
+        "settings-tooltip": "Open the settings menu"
+      }
+    },
     "disable-autoplay": {
       "description": "Makes song start in \"paused\" mode",
       "menu": {
@@ -849,6 +969,10 @@
             "label": "None",
             "tooltip": "No preferred provider"
           }
+        },
+        "providers": {
+          "label": "Lyrics Sources",
+          "tooltip": "Enable or disable lyrics providers; disabled ones are not fetched and cannot be auto-selected"
         },
         "default-text-string": {
           "label": "Default character between lyrics",
