@@ -1,6 +1,7 @@
 import { createRenderer } from '@/utils';
 import { waitForElement } from '@/utils/wait-for-element';
 
+import { attachProviderPicker } from './provider-picker';
 import { disposeReactiveRoot } from './reactive-root';
 import { setConfig, setCurrentTime } from './renderer';
 import { fetchLyrics } from './store';
@@ -49,6 +50,7 @@ export const renderer = createRenderer<
     _ytAPI = api;
 
     api.addEventListener('videodatachange', this.videoDataChange);
+    attachProviderPicker(api);
 
     await this.videoDataChange();
   },

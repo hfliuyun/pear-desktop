@@ -6,190 +6,23 @@ import { IconError } from '@mdui/icons/error.js';
 import { IconStarBorder } from '@mdui/icons/star-border.js';
 import { IconStar } from '@mdui/icons/star.js';
 import { IconWarning } from '@mdui/icons/warning.js';
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Index,
-  Match,
-  onCleanup,
-  onMount,
-  runWithOwner,
-  type Setter,
-  Show,
-  Switch,
-} from 'solid-js';
-import * as z from 'zod';
+import { For, Index, Match, type Setter, Show, Switch } from 'solid-js';
 
 import { LitElementWrapper } from '@/solit';
 
+import { providerNames } from '../../providers';
 import {
-  type ProviderName,
-  ProviderNames,
-  providerNames,
-  ProviderNameSchema,
-  type ProviderState,
-} from '../../providers';
-import { _ytAPI } from '../index';
-import { reactiveOwner } from '../reactive-root';
-import { config } from '../state';
-import { currentLyrics, lyricsStore, setLyricsStore } from '../store';
-
-import type { PlayerAPIEvents } from '@/types/player-api-events';
-
-const LocalStorageSchema = z.object({
-  provider: ProviderNameSchema,
-});
-
-// providers left after the user disabled some in the settings menu
-const enabledProviders = () => {
-  const disabled = config()?.disabledProviders;
-  return disabled?.length
-    ? providerNames.filter((provider) => !disabled.includes(provider))
-    : Array.from(providerNames);
-};
-
-export const providerIdx = runWithOwner(reactiveOwner, () =>
-  createMemo(() => enabledProviders().indexOf(lyricsStore.provider)),
-)!;
-
-const shouldSwitchProvider = (providerData: ProviderState) => {
-  if (providerData.state === 'error') return true;
-  if (providerData.state === 'fetching') return true;
-  return (
-    providerData.state === 'done' &&
-    !providerData.data?.lines &&
-    !providerData.data?.lyrics
-  );
-};
-
-const providerBias = (p: ProviderName) =>
-  (lyricsStore.lyrics[p].state === 'done' ? 1 : -1) +
-  (lyricsStore.lyrics[p].data?.lines?.length ? 2 : -1) +
-  (lyricsStore.lyrics[p].data?.lines?.length && p === ProviderNames.YTMusic
-    ? 1
-    : 0) +
-  (lyricsStore.lyrics[p].data?.lyrics ? 1 : -1);
-
-const pickBestProvider = () => {
-  const disabled = config()?.disabledProviders ?? [];
-  const preferred = config()?.preferredProvider;
-  if (preferred && !disabled.includes(preferred)) {
-    const data = lyricsStore.lyrics[preferred].data;
-    if (Array.isArray(data?.lines) || data?.lyrics) {
-      return { provider: preferred, force: true };
-    }
-  }
-
-  const providers = enabledProviders();
-  providers.sort((a, b) => providerBias(b) - providerBias(a));
-
-  return { provider: providers[0], force: false };
-};
-
-const [hasManuallySwitchedProvider, setHasManuallySwitchedProvider] =
-  createSignal(false);
+  enabledProviders,
+  providerIdx,
+  setHasManuallySwitchedProvider,
+  starredProvider,
+  toggleStar,
+} from '../provider-picker';
+import { currentLyrics, setLyricsStore } from '../store';
 
 export const LyricsPicker = (props: {
   setStickRef: Setter<HTMLElement | null>;
 }) => {
-  const [videoId, setVideoId] = createSignal<string | null>(null);
-  const [starredProvider, setStarredProvider] =
-    createSignal<ProviderName | null>(null);
-
-  createEffect(() => {
-    const id = videoId();
-    if (id === null) {
-      setStarredProvider(null);
-      return;
-    }
-
-    const key = `ytmd-sl-starred-${id}`;
-    const value = localStorage.getItem(key);
-    if (!value) {
-      setStarredProvider(null);
-      return;
-    }
-
-    const parseResult = LocalStorageSchema.safeParse(JSON.parse(value));
-    if (parseResult.success) {
-      setLyricsStore('provider', parseResult.data.provider);
-      setStarredProvider(parseResult.data.provider);
-    } else {
-      setStarredProvider(null);
-    }
-  });
-
-  const toggleStar = () => {
-    const id = videoId();
-    if (id === null) return;
-
-    const key = `ytmd-sl-starred-${id}`;
-
-    setStarredProvider((starredProvider) => {
-      if (lyricsStore.provider === starredProvider) {
-        localStorage.removeItem(key);
-        return null;
-      }
-
-      const provider = lyricsStore.provider;
-      localStorage.setItem(key, JSON.stringify({ provider }));
-
-      return provider;
-    });
-  };
-
-  const videoDataChangeHandler = (
-    name: string,
-    { videoId }: PlayerAPIEvents['videodatachange']['value'],
-  ) => {
-    setVideoId(videoId);
-
-    if (name !== 'dataloaded') return;
-    setHasManuallySwitchedProvider(false);
-  };
-
-  // prettier-ignore
-  {
-    onMount(() => _ytAPI?.addEventListener('videodatachange', videoDataChangeHandler));
-    onCleanup(() => _ytAPI?.removeEventListener('videodatachange', videoDataChangeHandler));
-  }
-
-  createEffect(() => {
-    const disabled = config()?.disabledProviders ?? [];
-
-    // the displayed provider got disabled (or is disabled at startup):
-    // always re-pick, even if it had been chosen manually
-    if (disabled.includes(lyricsStore.provider)) {
-      const { provider } = pickBestProvider();
-      if (provider) setLyricsStore('provider', provider);
-      return;
-    }
-
-    if (!hasManuallySwitchedProvider()) {
-      const starred = starredProvider();
-      if (starred !== null && !disabled.includes(starred)) {
-        setLyricsStore('provider', starred);
-        return;
-      }
-
-      const candidates = enabledProviders();
-      const allProvidersFailed = candidates.every((p) =>
-        shouldSwitchProvider(lyricsStore.lyrics[p]),
-      );
-      if (!candidates.length || allProvidersFailed) return;
-
-      const { provider, force } = pickBestProvider();
-      if (
-        force ||
-        providerBias(lyricsStore.provider) < providerBias(provider)
-      ) {
-        setLyricsStore('provider', provider);
-      }
-    }
-  });
-
   const next = () => {
     setHasManuallySwitchedProvider(true);
     setLyricsStore('provider', (prevProvider) => {
