@@ -142,3 +142,62 @@ test('karaoke', () => {
     tags: [],
   });
 });
+
+test('karaoke with CJK words has no injected spaces', () => {
+  // \w+ never matched CJK characters and join(' ') inserted bogus gaps; the
+  // enhanced line is marker-dense with no whitespace between words
+  const lrc = LRC.parse('[00:01.00]<00:01.50>中<00:02.00>文<00:02.50>歌');
+
+  expect(lrc.lines).toStrictEqual([
+    { duration: 1000, text: '', words: [], time: '00:00:00', timeInMs: 0 },
+    {
+      duration: Infinity,
+      text: '中文歌',
+      time: '00:01:00',
+      timeInMs: 1000,
+      words: [
+        { timeInMs: 1500, word: '中' },
+        { timeInMs: 2000, word: '文' },
+        { timeInMs: 2500, word: '歌' },
+      ],
+    },
+  ]);
+});
+
+test('karaoke with mixed CJK and latin words keeps spaces around latin', () => {
+  const lrc = LRC.parse(
+    '[00:00.10] <00:00.10> 这 <00:00.50> love <00:01.00> 故事',
+  );
+
+  expect(lrc.lines).toStrictEqual([
+    {
+      duration: Infinity,
+      text: '这 love 故事',
+      time: '00:00:10',
+      timeInMs: 100,
+      words: [
+        { timeInMs: 100, word: '这' },
+        { timeInMs: 500, word: 'love' },
+        { timeInMs: 1000, word: '故事' },
+      ],
+    },
+  ]);
+});
+
+test('karaoke word timings follow the offset tag', () => {
+  const lrc = LRC.parse('[offset:500]\n[00:01.00]<00:01.00>你<00:01.50>好');
+
+  expect(lrc.lines).toStrictEqual([
+    { duration: 1500, text: '', words: [], time: '00:00:00', timeInMs: 0 },
+    {
+      duration: Infinity,
+      text: '你好',
+      time: '00:01:00',
+      timeInMs: 1500,
+      words: [
+        { timeInMs: 1500, word: '你' },
+        { timeInMs: 2000, word: '好' },
+      ],
+    },
+  ]);
+});

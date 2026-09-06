@@ -20,8 +20,25 @@ const tagRegex = /^\[(?<tag>\w+):\s*(?<value>.+?)\s*\]$/;
 // prettier-ignore
 const timestampRegex = /^\[(?<minutes>\d+):(?<seconds>\d+)\.(?<centiseconds>\d+)\]/m;
 
+// The word must not swallow a following `<mm:ss.xx>` marker (CJK enhanced LRC
+// often has no whitespace between marker and word), so `<` is excluded.
 // prettier-ignore
-const wordRegex = /<(?<minutes>\d+):(?<seconds>\d+)\.(?<centiseconds>\d+)> *(?<word>\w+)/g;
+const wordRegex = /<(?<minutes>\d+):(?<seconds>\d+)\.(?<centiseconds>\d+)> *(?<word>[^<\s]+)/g;
+
+// CJK scripts have no inter-word spaces; reconstructing them with join(' ')
+// would inject bogus gaps between characters. Mixed lines keep spaces around
+// non-CJK words, so only two adjacent CJK words are glued together.
+const CJK_RE = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+const joinWords = (words: LRCLine['words']): string =>
+  words.reduce(
+    (text, { word }, i) =>
+      i === 0
+        ? word
+        : CJK_RE.test(word) && CJK_RE.test(words[i - 1].word)
+          ? text + word
+          : `${text} ${word}`,
+    '',
+  );
 
 export const LRC = {
   parse: (text: string): LRC => {
@@ -41,10 +58,9 @@ export const LRC = {
       while ((match = line.match(timestampRegex)?.groups)) {
         const { minutes, seconds, centiseconds } = match;
         const milliseconds = match.centiseconds.padEnd(3, '0');
-        const timeInMs =
-          ((parseInt(minutes) * 60) * 1000) +
-          (parseInt(seconds) * 1000) +
-          parseInt(milliseconds);
+        const minutesInMs = parseInt(minutes) * 60000;
+        const secondsInMs = parseInt(seconds) * 1000;
+        const timeInMs = minutesInMs + secondsInMs + parseInt(milliseconds);
 
         timestamps.push({
           time: `${minutes}:${seconds}:${centiseconds}`,
@@ -53,7 +69,6 @@ export const LRC = {
 
         line = line.replace(timestampRegex, '');
       }
-
       if (!timestamps.length) {
         const tag = line.match(tagRegex)?.groups;
         if (tag) {
@@ -74,16 +89,15 @@ export const LRC = {
       const words = Array.from(text.matchAll(wordRegex), ({ groups }) => {
         const { minutes, seconds, centiseconds, word } = groups!;
         const milliseconds = centiseconds.padEnd(3, '0');
-        const timeInMs =
-          ((parseInt(minutes) * 60) * 1000) +
-          (parseInt(seconds) * 1000) +
-          parseInt(milliseconds);
+        const minutesInMs = parseInt(minutes) * 60000;
+        const secondsInMs = parseInt(seconds) * 1000;
+        const timeInMs = minutesInMs + secondsInMs + parseInt(milliseconds);
 
         return { timeInMs, word };
       });
 
       if (words.length) {
-        text = words.map(({ word }) => word).join(' ');
+        text = joinWords(words);
       }
 
       for (const { time, timeInMs } of timestamps) {
@@ -103,6 +117,10 @@ export const LRC = {
       const next = lrc.lines[i + 1];
 
       current.timeInMs += offset;
+      // word timings share the line's (shifted) timeline
+      for (const word of current.words) {
+        word.timeInMs += offset;
+      }
 
       if (next) {
         current.duration = next.timeInMs - current.timeInMs;
